@@ -5,7 +5,8 @@ A smart anti-idle program for Linux that sends hardware-level keyboard input to 
 ## Features
 
 - **Hardware-level input**: Uses Linux uinput to create real keyboard events that games accept
-- **Simple and reliable**: Sends arrow key presses (Left, Right, Up, Down) directly to the focused window
+- **Automatic window focusing**: Automatically focuses and raises the target window before each input, ensuring inputs always go to the selected window even when it's out of focus or minimized
+- **Simple and reliable**: Sends arrow key presses (Left, Right, Up, Down) directly to the target window
 - **Advanced anti-cheat bypass**: Sophisticated human behavior simulation
   - Weighted timing patterns (short intervals more common, long intervals rare)
   - Micro-variations in timing (±5 seconds) for natural feel
@@ -17,7 +18,6 @@ A smart anti-idle program for Linux that sends hardware-level keyboard input to 
 - **Detailed logging**: Logs every action with timestamps, press durations, and session statistics
 - **Test mode included**: Verify uinput is working before using the main program
 - **Tested and working**: Successfully tested with Old School RuneScape (OSRS)
-- **Upcoming**: Window switching support for background operation
 
 ## Requirements
 
@@ -95,9 +95,7 @@ The compiled binary will be in the `bin/` directory.
 
 2. **Click on your game window** when prompted (e.g., RuneLite/OSRS)
 
-3. **During the 10-second startup delay, double-click your game window** to ensure it has focus
-
-4. The program will start sending arrow key presses automatically
+3. The program will automatically focus the target window and start sending arrow key presses
 
 ### Examples
 
@@ -132,9 +130,13 @@ If test mode shows no cursor movement:
 
 ### How It Works
 
-1. **Window Selection**: When you run the program, click on the window you want to keep active (this is just for logging - the program sends events to whatever window has focus)
+1. **Window Selection**: When you run the program, click on the window you want to keep active
 2. **Startup Delay**: The program waits for the specified delay (default 10 seconds)
-3. **Focus Your Window**: **IMPORTANT** - During the startup delay, double-click your game window (e.g., OSRS/RuneLite) to ensure it has focus. The program sends events to whatever window is currently focused.
+3. **Automatic Window Focusing**: Before each input action, the program automatically:
+   - Focuses the target window
+   - Raises it to the top if needed
+   - Unminimizes it if it was minimized
+   - Ensures inputs always go to the selected window
 4. **Automatic Actions**: The program will automatically:
    - Randomly press arrow keys (Left, Right, Up, Down)
    - Use the same reliable method as test mode (proven to work)
@@ -143,11 +145,9 @@ If test mode shows no cursor movement:
    - Log detailed information about each action including press duration
 
 **Important**: 
-- **Double-click your game window** (e.g., OSRS) after starting the program to ensure it has focus
-- The program sends events to whatever window currently has focus
-- If you switch to another window, events will go to that window instead
-
-**Upcoming Feature**: Window switching support is being developed to allow switching between different windows while the program runs in the background.
+- The program automatically focuses the target window before each input
+- You can click away or minimize the target window - inputs will still go to it
+- The window will be automatically focused, raised, and unminimized as needed
 
 ### Anti-Cheat Bypass Logic
 
@@ -215,8 +215,9 @@ The timing is specifically tuned to ensure actions occur before OSRS's 5-minute 
 ## Technical Details
 
 - Uses Linux `uinput` kernel module for hardware-level input events
-- Uses X11 only for initial window selection (logging purposes)
-- Sends events directly via uinput - no X11 focus manipulation needed
+- Uses X11 for window selection and automatic window focusing
+- Uses X11 EWMH (Extended Window Manager Hints) to focus, raise, and unminimize windows
+- Sends events directly via uinput after ensuring the target window has focus
 - Simple and reliable: Uses the same proven method as test mode
 
 ### Anti-Cheat Implementation
@@ -244,7 +245,9 @@ The program implements a sophisticated multi-layered anti-cheat bypass system:
 
 The program creates a virtual input device using `uinput` and sends real hardware-level keyboard events. This approach bypasses the limitations of XTest/X11 synthetic events, allowing the program to work with games like RuneLite that filter out synthetic input.
 
-The main program uses the exact same event-sending logic as test mode, which has been proven to work. Events are sent directly to whatever window currently has focus.
+Before each input action, the program uses X11 EWMH to automatically focus, raise, and unminimize the target window. This ensures inputs always go to the selected window, even if you've clicked away or minimized it.
+
+The main program uses the exact same event-sending logic as test mode, which has been proven to work.
 
 The anti-cheat bypass works by creating behavior patterns that are statistically similar to real human players, making detection extremely difficult.
 
@@ -313,22 +316,21 @@ You should see output showing the "Anti-Idle Virtual Input" device. If you don't
 
 If test mode works (cursor moves in text editor) but events don't work in your target application:
 
-1. **Double-click your game window** - After starting the program, double-click your game window (e.g., OSRS/RuneLite) to ensure it has focus. The program sends events to whatever window is currently focused.
-2. **Make sure the application window has focus** - The program sends events to whatever window is focused. If you switch windows, events will go to the new focused window.
-3. **Try test mode first** - If test mode works in a text editor, the main program should work too (they use the same logic)
-4. **The application may be filtering input** - Some applications only accept input from specific devices or use raw input mechanisms
-5. **This is application-specific behavior** - not a bug in this program
+1. **The program automatically focuses the target window** - You don't need to manually focus it. The program will focus, raise, and unminimize the window before each input.
+2. **Try test mode first** - If test mode works in a text editor, the main program should work too (they use the same logic)
+3. **The application may be filtering input** - Some applications only accept input from specific devices or use raw input mechanisms
+4. **This is application-specific behavior** - not a bug in this program
 
-**Tip**: If test mode worked for you, the main program uses the exact same event-sending method, so it should work the same way. Just make sure to **double-click your game window** during the startup delay to ensure it has focus.
+**Tip**: If test mode worked for you, the main program uses the exact same event-sending method, so it should work the same way. The program automatically handles window focusing for you.
 
 ### Window Focus Issues
 
-If actions aren't reaching your game:
+The program now automatically handles window focusing:
 
-- **Double-click the game window** after starting the program (during the startup delay)
-- The program sends events to whatever window currently has focus
-- If you switch to another window, events will go to that window instead
-- **Upcoming feature**: Window switching support will allow switching between windows while the program runs in the background
+- **Automatic focusing**: The target window is automatically focused before each input action
+- **Automatic raising**: The window is raised to the top if needed
+- **Automatic unminimizing**: If the window is minimized, it will be automatically restored
+- **Works in background**: You can click away or minimize the target window - inputs will still go to it
 
 ## License
 
