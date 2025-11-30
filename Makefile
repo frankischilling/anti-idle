@@ -1,6 +1,6 @@
 CC = gcc
 CFLAGS = -Wall -Wextra -O2
-LDFLAGS = -lX11 -lm
+LDFLAGS = -lX11 -lXtst -lm
 TARGET = antiidle
 SOURCE = src/antiidle.c
 BUILD_DIR = build
