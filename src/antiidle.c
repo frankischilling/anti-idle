@@ -3,22 +3,38 @@
 #include <string.h>
 #include <time.h>
 #include <math.h>
-#include <unistd.h>
-#include <fcntl.h>
-#include <sys/time.h>
-#include <linux/input.h>
-#include <linux/uinput.h>
-#include <sys/ioctl.h>
-#include <X11/Xlib.h>
-#include <X11/Xatom.h>
 
-// Linux key codes
-#define KEY_LEFT  105
-#define KEY_RIGHT 106
-#define KEY_UP    103
-#define KEY_DOWN  108
+#ifdef _WIN32
+    #define WIN32_LEAN_AND_MEAN
+    #include <windows.h>
+    // Windows virtual key codes for arrow keys
+    #define KEY_LEFT  VK_LEFT
+    #define KEY_RIGHT VK_RIGHT
+    #define KEY_UP    VK_UP
+    #define KEY_DOWN  VK_DOWN
+    static HWND target_window = NULL;
+#else
+    #include <unistd.h>
+    #include <fcntl.h>
+    #include <sys/time.h>
+    #include <linux/input.h>
+    #include <linux/uinput.h>
+    #include <sys/ioctl.h>
+    #include <X11/Xlib.h>
+    #include <X11/Xatom.h>
+    // Linux key codes
+    #define KEY_LEFT  105
+    #define KEY_RIGHT 106
+    #define KEY_UP    103
+    #define KEY_DOWN  108
+    static int uinput_fd = -1;
+#endif
 
-static int uinput_fd = -1;
+// Platform-specific sleep functions
+#ifdef _WIN32
+    #define sleep(sec) Sleep((sec) * 1000)
+    #define usleep(usec) Sleep((usec) / 1000)
+#endif
 
 // Timing patterns for more human-like behavior
 typedef struct {
@@ -81,6 +97,20 @@ int should_misclick() {
     return (rand() % 100) < 3;  // 3% chance
 }
 
+#ifdef _WIN32
+int init_uinput(void) {
+    // Windows doesn't need uinput initialization
+    // Input will be sent directly using SendInput
+    printf("SUCCESS: Windows input system ready\n");
+    fflush(stdout);
+    return 0;
+}
+
+void cleanup_uinput(void) {
+    // No cleanup needed on Windows
+    target_window = NULL;
+}
+#else
 int init_uinput(void) {
     struct uinput_setup usetup;
     
@@ -131,7 +161,28 @@ void cleanup_uinput(void) {
         uinput_fd = -1;
     }
 }
+#endif
 
+#ifdef _WIN32
+void send_key_event(int keycode, int value) {
+    INPUT input;
+    ZeroMemory(&input, sizeof(INPUT));
+    input.type = INPUT_KEYBOARD;
+    input.ki.wVk = keycode;
+    input.ki.dwFlags = (value == 0) ? KEYEVENTF_KEYUP : 0;
+    SendInput(1, &input, sizeof(INPUT));
+}
+
+void send_mouse_rel(int x, int y) {
+    INPUT input;
+    ZeroMemory(&input, sizeof(INPUT));
+    input.type = INPUT_MOUSE;
+    input.mi.dx = x;
+    input.mi.dy = y;
+    input.mi.dwFlags = MOUSEEVENTF_MOVE;
+    SendInput(1, &input, sizeof(INPUT));
+}
+#else
 void send_key_event(int keycode, int value) {
     struct input_event ev;
     
@@ -186,6 +237,7 @@ void send_mouse_rel(int x, int y) {
     gettimeofday(&ev.time, NULL);
     write(uinput_fd, &ev, sizeof(ev));
 }
+#endif
 
 int perform_key_action(int keycode) {
     int press_duration = get_press_duration_us();
@@ -272,6 +324,43 @@ void perform_human_action(int action_num, FILE *log_file) {
     usleep((10 + rand() % 40) * 1000);  // 10-50ms
 }
 
+#ifdef _WIN32
+HWND select_window(void) {
+    printf("Click on the window you want to target...\n");
+    fflush(stdout);
+    
+    POINT pt;
+    HWND hwnd = NULL;
+    
+    // Wait for mouse click
+    while (1) {
+        if (GetAsyncKeyState(VK_LBUTTON) & 0x8000) {
+            GetCursorPos(&pt);
+            hwnd = WindowFromPoint(pt);
+            // Get the top-level window
+            while (GetParent(hwnd) != NULL) {
+                hwnd = GetParent(hwnd);
+            }
+            // Wait for button release
+            while (GetAsyncKeyState(VK_LBUTTON) & 0x8000) {
+                Sleep(10);
+            }
+            break;
+        }
+        Sleep(10);
+    }
+    
+    return hwnd;
+}
+
+char *get_window_name(HWND hwnd) {
+    static char window_name[256];
+    if (hwnd && GetWindowTextA(hwnd, window_name, sizeof(window_name))) {
+        return window_name;
+    }
+    return "Unknown";
+}
+#else
 Window select_window(Display *dpy) {
     printf("Click on the window you want to target...\n");
     fflush(stdout);
@@ -302,9 +391,17 @@ char *get_window_name(Display *dpy, Window win) {
     }
     return "Unknown";
 }
+#endif
 
 int main(int argc, char *argv[]) {
+#ifdef _WIN32
+    HWND target;
+    char *name;
+#else
     Display *display;
+    Window target;
+    char *name;
+#endif
     FILE *log;
     int startup_delay = 10;
     int test_mode = 0;
@@ -319,16 +416,30 @@ int main(int argc, char *argv[]) {
     }
 
     // Seed with more entropy
+#ifdef _WIN32
+    SYSTEMTIME st;
+    GetSystemTime(&st);
+    srand(st.wSecond * 1000000 + st.wMilliseconds * 1000);
+#else
     struct timeval tv;
     gettimeofday(&tv, NULL);
     srand(tv.tv_sec * 1000000 + tv.tv_usec);
+#endif
 
-    // Initialize uinput
+    // Initialize input system
     if (init_uinput() < 0) {
         return 1;
     }
     atexit(cleanup_uinput);
 
+#ifdef _WIN32
+    // Select target window
+    target = select_window();
+    name = get_window_name(target);
+    printf("Selected window: 0x%p (%s)\n", (void*)target, name);
+    fflush(stdout);
+    target_window = target;
+#else
     display = XOpenDisplay(NULL);
     if (!display) {
         fprintf(stderr, "Cannot open X display.\n");
@@ -337,10 +448,11 @@ int main(int argc, char *argv[]) {
     }
 
     // Select target window
-    Window target = select_window(display);
-    char *name = get_window_name(display, target);
+    target = select_window(display);
+    name = get_window_name(display, target);
     printf("Selected window: 0x%lx (%s)\n", target, name);
     fflush(stdout);
+#endif
 
     if (test_mode) {
         printf("=== TEST MODE ===\n");
@@ -377,7 +489,11 @@ int main(int argc, char *argv[]) {
         
         printf("\nTest complete!\n");
         cleanup_uinput();
+#ifdef _WIN32
+        // No display to close on Windows
+#else
         XCloseDisplay(display);
+#endif
         return 0;
     }
 
@@ -391,8 +507,13 @@ int main(int argc, char *argv[]) {
     
     log = fopen("antiidle.log", "a");
     if (log) {
+#ifdef _WIN32
+        fprintf(log, "\n[%s] === SESSION STARTED ===\n", start_time_str);
+        fprintf(log, "[%s] Target window: 0x%p (%s)\n", start_time_str, (void*)target, name);
+#else
         fprintf(log, "\n[%s] === SESSION STARTED ===\n", start_time_str);
         fprintf(log, "[%s] Target window: 0x%lx (%s)\n", start_time_str, target, name);
+#endif
         fclose(log);
     }
     
@@ -480,7 +601,11 @@ int main(int argc, char *argv[]) {
         sleep(delay);
     }
 
+#ifdef _WIN32
+    // No display to close on Windows
+#else
     XCloseDisplay(display);
+#endif
     cleanup_uinput();
     return 0;
 }
